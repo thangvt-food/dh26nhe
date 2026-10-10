@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-ssr/
+# Mã nguồn mẫu tham khảo (không push lên GitHub)
+source-repo/
 *.local
 .env
 !.env.example
