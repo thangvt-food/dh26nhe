@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "activities": {
+      "$semester": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.token.admin === true"
+      }
+    },
+    "drl": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true"
+    },
+    "system_config": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true"
+    }
+  }
+}

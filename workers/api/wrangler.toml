@@ -1,0 +1,16 @@
+# DH26NHE API Worker — port từ Go server gốc (chỉ giữ endpoints app mới dùng).
+# Chi tiết routes/auth/secrets xem đầu workers/api/worker.ts
+name = "dh26nhe-api"
+main = "worker.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+FIREBASE_PROJECT_ID = "dh26nhe"
+FIREBASE_DATABASE_URL = "https://dh26nhe-default-rtdb.asia-southeast1.firebasedatabase.app"
+DEFAULT_CLASS_NAME = "DH26NHE"
+DEFAULT_SEMESTER = "HK1N1"
+
+# Secrets (đặt bằng wrangler, KHÔNG ghi giá trị vào đây):
+#   npx wrangler secret put GAS_WEB_APP_URL        (relay email qua Google Apps Script)
+#   npx wrangler secret put API_KEY                (auth thay thế cho automation)
+#   npx wrangler secret put FCM_SERVICE_ACCOUNT_JSON (push FCM; thiếu = bỏ qua push, tin vẫn lưu RTDB)

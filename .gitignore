@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+!.env.example
+# Secrets — TUYỆT ĐỐI không commit key/env chứa secrets
+serviceAccountKey.json
+*-serviceAccount*.json
+*service-account*.json
+keyCloud.json
+*-firebase-adminsdk-*.json
+.env.development
+.env.production
+.DS_Store
+firebase-debug.log
+firebaserc
+.firebaserc
