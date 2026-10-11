@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Award, CheckCircle2, Circle, RefreshCw, Search, Trophy } from 'lucide-react';
-import { SEMESTERS } from '@/firebase';
+import { DEFAULT_SEMESTERS } from '@/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
+import { useSemesters } from '@/hooks/useSemesters';
 import { useUserActivities } from '@/pages/ProfilePage/hooks/useUserActivities';
 import { ScoreSummary } from '@/pages/ProfilePage/components/ScoreSummary';
 import { RankingWidget, openRanking } from '@/pages/RoomPage/components/RankingWidget';
@@ -11,7 +12,8 @@ import { cn } from '@/utils/cn';
 
 export function DrlView() {
   const { currentUser } = useAuth();
-  const [semester, setSemester] = useState<string>(SEMESTERS[0]);
+  const semesters = useSemesters();
+  const [semester, setSemester] = useState<string>(DEFAULT_SEMESTERS[0]);
   const [keyword, setKeyword] = useState('');
   usePageTracking('drl');
 
@@ -58,7 +60,7 @@ export function DrlView() {
             className="h-9 px-3 text-[12px] font-bold text-[#3390ec] bg-[#3390ec]/10 rounded-xl outline-none cursor-pointer"
             aria-label="Chọn học kỳ"
           >
-            {SEMESTERS.map((s) => (
+            {semesters.map((s) => (
               <option key={s} value={s} className="text-black text-[12px]">
                 {s}
               </option>

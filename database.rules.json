@@ -13,6 +13,19 @@
     "system_config": {
       ".read": "auth != null",
       ".write": "auth != null && auth.token.admin === true"
+    },
+    "galleryLinks": {
+      ".read": true,
+      "$slug": {
+        ".write": "auth != null && (!data.exists() || data.child('email').val() === auth.token.email || auth.token.admin === true)",
+        ".validate": "newData.child('email').isString() && newData.child('email').val().contains('@')"
+      }
+    },
+    "userGallery": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }

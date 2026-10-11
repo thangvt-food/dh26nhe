@@ -17,7 +17,7 @@ import {
   Plus,
   Home,
 } from 'lucide-react';
-import { SEMESTERS } from '@/firebase';
+import { DEFAULT_SEMESTERS } from '@/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/components/shared/Toast';
@@ -26,6 +26,7 @@ import type { RoomDefinition, SubmissionStatus } from '@/types/submission.types'
 
 interface Props {
   semester: string;
+  semesters?: string[];
   onSemesterChange: (semester: string) => void;
   activities: RoomDefinition[];
   selectedRoomId: string | null;
@@ -76,6 +77,7 @@ function StatusDot({ status }: { status: SubmissionStatus }) {
 
 export function RoomSidebar({
   semester,
+  semesters,
   onSemesterChange,
   activities,
   selectedRoomId,
@@ -88,6 +90,7 @@ export function RoomSidebar({
   const navigate = useNavigate();
   const { currentUser, logout } = useAuth();
   const { mode, setMode } = useTheme();
+  const semesterOptions = semesters ?? DEFAULT_SEMESTERS;
   const [searchTerm, setSearchTerm] = useState('');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -161,7 +164,7 @@ export function RoomSidebar({
               className="flex items-center h-8 min-w-[52px] px-2 text-[12px] font-bold text-[#3390ec] bg-[#3390ec]/10 rounded-full border-none outline-none cursor-pointer"
               aria-label="Chọn học kỳ"
             >
-              {SEMESTERS.map((s) => (
+              {semesterOptions.map((s) => (
                 <option key={s} value={s} className="text-black">
                   {s}
                 </option>

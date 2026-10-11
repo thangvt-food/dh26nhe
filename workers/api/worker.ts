@@ -13,6 +13,8 @@
  *   POST /api/dkmh/grades                      — bảng điểm (Bearer DKMH token)
  *   POST /api/dkmh/exam                        — lịch thi (Bearer DKMH token)
  *   GET  /api/dkmh/tkb/export-ics              — xuất TKB dạng .ics (?token=&hoc_ky=)
+ *   POST /api/ai/format                        — biên tập thông báo (Groq, secret GROQ_API_KEY)
+ *   POST /api/storage/fetch                    — proxy tải minh chứng (fix CORS cho export ZIP)
  *
  * KHÔNG port (ngoài phạm vi 3 trang + admin): Drive export, news scrape,
  * quiz GCN, reports, suggestions, posts — client gọi Firebase trực tiếp.
@@ -866,6 +868,36 @@ export default {
           return json({ error: 'Token DKMH hết hạn.', code: 'TOKEN_EXPIRED' }, 401);
         }
         return json({ error: 'Không thể tạo file export.' }, 500);
+      }
+    }
+
+    // POST /api/storage/fetch — proxy tải minh chứng (GET firebasestorage trả thiếu
+    // ACAO trên response thật → browser fetch bị CORS chặn). requireUser + whitelist bucket.
+    if (req.method === 'POST' && path === '/api/storage/fetch') {
+      try {
+        await requireUser(req, env);
+      } catch (e) {
+        return e as Response;
+      }
+      const body = await readJsonBody(req);
+      const url = typeof body.url === 'string' ? body.url : '';
+      const isTrusted =
+        /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/dh26nhe\.firebasestorage\.app\/o\/.+/.test(url) ||
+        /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/dh26nhe\.appspot\.com\/o\/.+/.test(url);
+      if (!isTrusted) return json({ error: 'URL file không hợp lệ.' }, 400);
+      try {
+        const upstream = await fetch(url);
+        if (!upstream.ok) {
+          return json({ error: `Tải file thất bại (HTTP ${upstream.status}).` }, 502);
+        }
+        const headers = new Headers({ 'Access-Control-Allow-Origin': '*' });
+        const ct = upstream.headers.get('content-type');
+        if (ct) headers.set('Content-Type', ct);
+        const cl = upstream.headers.get('content-length');
+        if (cl) headers.set('Content-Length', cl);
+        return new Response(upstream.body, { headers });
+      } catch {
+        return json({ error: 'Không tải được file từ Storage.' }, 502);
       }
     }
 

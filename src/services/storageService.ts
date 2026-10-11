@@ -1,5 +1,5 @@
 import { ref as storageRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { storage } from '@/firebase';
+import { auth, storage } from '@/firebase';
 
 /** Tầng thao tác file minh chứng trên Firebase Storage. */
 export const storageService = {
@@ -38,6 +38,32 @@ export const storageService = {
     if (!url) return;
     const targetRef = storageRef(storage, url);
     await deleteObject(targetRef);
+  },
+
+  /**
+   * Tải blob minh chứng cho export ZIP.
+   * GET firebasestorage trên response thật không trả ACAO → fetch trực tiếp từ
+   * browser bị CORS chặn. Khi Worker đã cấu hình (VITE_API_URL), đi qua proxy
+   * /api/storage/fetch (server-to-server không có CORS, whitelist bucket DH26NHE).
+   */
+  async fetchEvidenceBlob(url: string): Promise<Blob> {
+    const base = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '');
+    if (base) {
+      const token = (await auth.currentUser?.getIdToken()) ?? null;
+      const res = await fetch(`${base}/api/storage/fetch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error ?? `Tải file thất bại (HTTP ${res.status}).`);
+      }
+      return await res.blob();
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Tải file thất bại (HTTP ${res.status}).`);
+    return await res.blob();
   },
 
   async deleteFilesByUrls(urls: string[]): Promise<void> {

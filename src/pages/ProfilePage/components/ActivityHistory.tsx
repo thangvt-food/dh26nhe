@@ -17,7 +17,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { roomService } from '@/services/submissionService';
-import { SEMESTERS } from '@/firebase';
+import { useSemesters } from '@/hooks/useSemesters';
 import { toast } from '@/components/shared/Toast';
 import { cn } from '@/utils/cn';
 import type { ActivitySubmission, SubmissionStatus } from '@/types/submission.types';
@@ -187,6 +187,7 @@ export function ActivityHistory({
   fetchUserActivities,
 }: Props) {
   const navigate = useNavigate();
+  const semesters = useSemesters();
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -254,7 +255,7 @@ export function ActivityHistory({
             className="h-6 px-2 text-[10px] font-bold text-[#3390ec] bg-[#3390ec]/10 rounded-full border-0 outline-none cursor-pointer"
             aria-label="Chọn học kỳ"
           >
-            {SEMESTERS.map((s) => (
+            {semesters.map((s) => (
               <option key={s} value={s} className="text-black text-[12px]">
                 {s}
               </option>

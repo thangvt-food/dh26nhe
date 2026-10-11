@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Award,
   CalendarClock,
+  Images,
   LayoutGrid,
   LogOut,
   Moon,
@@ -139,6 +140,16 @@ export function HomeView() {
         gradient: 'from-[#f5a623] to-[#f97316]',
         glow: 'shadow-[#f5a623]/30',
         badge: !drlLoading ? `${finalScore}đ` : undefined,
+      },
+      {
+        id: 'gallery',
+        name: 'Kỷ niệm',
+        desc: 'Phòng trưng bày',
+        to: '/gallery',
+        icon: Images,
+        gradient: 'from-[#ec4899] to-[#f97316]',
+        glow: 'shadow-[#ec4899]/30',
+        badge: undefined,
       },
       {
         id: 'profile',

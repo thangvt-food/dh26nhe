@@ -8,6 +8,7 @@ import {
   Home,
   X,
   BadgeCheck,
+  CalendarRange,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
@@ -32,6 +33,7 @@ const SECTIONS: {
     items: [
       { label: 'Thống kê tập trung', to: '/admin/statistics', icon: PieChart },
       { label: 'Quản lý ĐRL', to: '/admin/drl-management', icon: Star },
+      { label: 'Cấu hình học kỳ', to: '/admin/semesters', icon: CalendarRange },
     ],
   },
 ];

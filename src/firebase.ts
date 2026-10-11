@@ -59,14 +59,11 @@ export const APP_CONFIG = {
   studentEmailDomain: env('VITE_STUDENT_EMAIL_DOMAIN') || '@st.hcmuaf.edu.vn',
 } as const;
 
-export const SEMESTERS = [
-  'HK1N1',
-  'HK2N1',
-  'HK1N2',
-  'HK2N2',
-  'HK1N3',
-  'HK2N3',
-  'HK1N4',
-  'HK2N4',
-] as const;
-export type SemesterId = (typeof SEMESTERS)[number];
+/**
+ * Danh sách học kỳ MẶC ĐỊNH: 1 năm học có 3 học kỳ (HK1–HK3) × 4 năm.
+ * App dùng danh sách ĐỘNG do admin đặt trong RTDB `system_config/semesters`
+ * (xem semesterService) — đây chỉ là fallback khi chưa có config.
+ */
+export const DEFAULT_SEMESTERS: string[] = ['N1', 'N2', 'N3', 'N4'].flatMap((_, yi) =>
+  ['HK1', 'HK2', 'HK3'].map((hk) => `${hk}N${yi + 1}`),
+);

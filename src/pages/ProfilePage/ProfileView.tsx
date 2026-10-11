@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Inbox, CheckCircle, Clock, XCircle } from 'lucide-react';
-import { SEMESTERS } from '@/firebase';
+import { DEFAULT_SEMESTERS } from '@/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useUserActivities } from './hooks/useUserActivities';
@@ -14,7 +14,7 @@ import { cn } from '@/utils/cn';
 
 export function ProfileView() {
   const { currentUser } = useAuth();
-  const [semester, setSemester] = useState<string>(SEMESTERS[0]);
+  const [semester, setSemester] = useState<string>(DEFAULT_SEMESTERS[0]);
   usePageTracking('profile');
 
   const {

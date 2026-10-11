@@ -12,6 +12,7 @@ export function RoomView() {
   const { isMobile } = useDevice();
   const {
     semester,
+    semesters,
     rooms,
     roomsLoading,
     selectedRoomId,
@@ -39,6 +40,7 @@ export function RoomView() {
         >
           <RoomSidebar
             semester={semester}
+            semesters={semesters}
             onSemesterChange={selectSemester}
             activities={rooms}
             selectedRoomId={selectedRoomId}

@@ -2,8 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Hồ sơ minh chứng theo học kỳ: /users/{semester}/submissions/{submissionId}
+    // Đọc public CHỈ với bài đã duyệt (phòng trưng bày công khai);
+    // user đăng nhập đọc được tất cả của mình/admin.
     match /users/{semester}/submissions/{submissionId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null || resource.data.status == 'approved';
       allow create: if request.auth != null
         && request.resource.data.email == request.auth.token.email;
       allow update, delete: if request.auth != null

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { toast } from '@/components/shared/Toast';
+import { storageService } from '@/services/storageService';
 import { studentIdFromEmail } from '@/utils/cn';
 import type { ActivitySubmission } from '@/types/submission.types';
 import type { ExtendedUser } from '@/types/auth.types';
@@ -50,9 +51,8 @@ export function useExportActivities(user: ExtendedUser | null, semester: string)
         for (const [fi, url] of submission.fileUrls.entries()) {
           try {
             setExportProgress(`Đang tải ${done + 1}/${totalFiles} tệp...`);
-            const res = await fetch(url);
-            const blob = await res.blob();
-            const ext = blob.type.includes('pdf') ? 'pdf' : blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
+            const blob = await storageService.fetchEvidenceBlob(url);
+            const ext = blob.type.includes('pdf') ? 'pdf' : blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : blob.type.includes('zip') ? 'zip' : blob.type.includes('document') || blob.type.includes('word') ? 'docx' : blob.type.includes('sheet') || blob.type.includes('excel') ? 'xlsx' : 'jpg';
             folder.file(`minh_chung_${fi + 1}.${ext}`, blob);
           } catch {
             folder.file(`loi_tai_${fi + 1}.txt`, `Khong tai duoc: ${url}`);

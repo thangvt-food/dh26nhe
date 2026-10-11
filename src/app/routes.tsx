@@ -5,6 +5,7 @@ import { LoginView } from '@/pages/LoginPage/LoginView';
 import { HomeView } from '@/pages/HomePage/HomeView';
 import { TkbView } from '@/pages/TkbPage/TkbView';
 import { DrlView } from '@/pages/DrlPage/DrlView';
+import { GalleryOwnView, GalleryPublicView } from '@/pages/GalleryPage/GalleryView';
 import { RoomView } from '@/pages/RoomPage/RoomView';
 import { ProfileView } from '@/pages/ProfilePage/ProfileView';
 import { AdminView } from '@/pages/AdminPage/AdminView';
@@ -48,6 +49,16 @@ export function AppRoutes() {
           </RequireAuth>
         }
       />
+      {/* Phòng trưng bày — /gallery là của mình (cần đăng nhập), /g/:slug là link riêng công khai */}
+      <Route
+        path="/gallery"
+        element={
+          <RequireAuth>
+            <GalleryOwnView />
+          </RequireAuth>
+        }
+      />
+      <Route path="/g/:slug" element={<GalleryPublicView />} />
       <Route
         path="/rooms"
         element={
@@ -132,6 +143,16 @@ export function AppRoutes() {
           <RequireAuth>
             <AdminRoute>
               <AdminView initialTab="statistics" />
+            </AdminRoute>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin/semesters"
+        element={
+          <RequireAuth>
+            <AdminRoute>
+              <AdminView initialTab="semesters" />
             </AdminRoute>
           </RequireAuth>
         }
