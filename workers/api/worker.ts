@@ -7,6 +7,12 @@
  *   POST /send-email-upload                    — relay email qua GAS (user đăng nhập)
  *   POST /api/notifications/broadcast          — ghi RTDB notifications + push FCM (admin)
  *   POST /api/notifications/send-to-user       — push FCM tới 1 user (admin)
+ *   POST /api/dkmh/login                       — đăng nhập DKMH (MSSV + mật khẩu) → access/refresh token
+ *   POST /api/dkmh/refresh                     — cấp lại access token bằng refresh_token
+ *   POST /api/dkmh/tkb                         — thời khóa biểu theo học kỳ (Bearer DKMH token)
+ *   POST /api/dkmh/grades                      — bảng điểm (Bearer DKMH token)
+ *   POST /api/dkmh/exam                        — lịch thi (Bearer DKMH token)
+ *   GET  /api/dkmh/tkb/export-ics              — xuất TKB dạng .ics (?token=&hoc_ky=)
  *
  * KHÔNG port (ngoài phạm vi 3 trang + admin): Drive export, news scrape,
  * quiz GCN, reports, suggestions, posts — client gọi Firebase trực tiếp.
@@ -31,6 +37,7 @@ interface Env {
   GAS_WEB_APP_URL?: string;
   API_KEY?: string;
   FCM_SERVICE_ACCOUNT_JSON?: string;
+  GROQ_API_KEY?: string;
 }
 
 interface TokenClaims {
@@ -325,6 +332,269 @@ async function collectAllTokens(env: Env, callerToken: string): Promise<string[]
   return out;
 }
 
+/* ── DKMH proxy (port từ dkmh-vercel: lib/dkmh.ts + lib/ics.ts) ──
+ * Client (app TKB) đăng nhập bằng MSSV/mật khẩu DKMH, nhận access/refresh
+ * token lưu ở localStorage máy người dùng; worker chỉ relay sang
+ * https://dkmh.hcmuaf.edu.vn nên không giữ mật khẩu/mã token nào.
+ */
+
+const DKMH_BASE = 'https://dkmh.hcmuaf.edu.vn';
+const DKMH_TOKEN_EXPIRED = 'DKMH_TOKEN_EXPIRED';
+
+interface DkmhHocKy {
+  hoc_ky: number;
+  ten_hoc_ky: string;
+  ngay_bat_dau_hk?: string;
+  ngay_ket_thuc_hk?: string;
+}
+
+function dkmhHeaders(token: string, contentType: string): Record<string, string> {
+  return {
+    accept: 'application/json, text/plain, */*',
+    authorization: `Bearer ${token}`,
+    'content-type': contentType,
+    Referer: 'https://dkmh.hcmuaf.edu.vn/',
+  };
+}
+
+async function dkmhFetch(path: string, init: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    return await fetch(`${DKMH_BASE}${path}`, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function dkmhLogin(username: string, password: string) {
+  const u = username.trim();
+  if (!u || !password) return null;
+  const params = new URLSearchParams();
+  params.append('grant_type', 'password');
+  params.append('username', u);
+  params.append('password', password);
+  try {
+    const res = await dkmhFetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string };
+    return data?.access_token ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function dkmhRefreshToken(refreshToken: string) {
+  const params = new URLSearchParams();
+  params.append('grant_type', 'refresh_token');
+  params.append('refresh_token', refreshToken.trim());
+  const res = await dkmhFetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { access_token?: string };
+  return data?.access_token ? data : null;
+}
+
+/** POST JSON kèm Bearer token. DKMH trả 401 → token hết hạn. */
+async function dkmhPost(path: string, token: string, body: unknown): Promise<unknown> {
+  const res = await dkmhFetch(path, {
+    method: 'POST',
+    headers: dkmhHeaders(token, 'application/json'),
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) throw new Error(DKMH_TOKEN_EXPIRED);
+  if (!res.ok) throw new Error(`DKMH request failed: ${res.status}`);
+  return res.json();
+}
+
+function parseVnDateKey(dateStr?: string): number {
+  if (!dateStr) return NaN;
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return NaN;
+  return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).setHours(0, 0, 0, 0);
+}
+
+async function dkmhHocKyList(token: string): Promise<DkmhHocKy[]> {
+  const data = (await dkmhPost('/api/sch/w-locdshockytkbuser', token, {
+    filter: { is_tieng_anh: null },
+    additional: { paging: { limit: 100, page: 1 }, ordering: [{ name: 'hoc_ky', order_type: 1 }] },
+  })) as { data?: { ds_hoc_ky?: DkmhHocKy[] } };
+  return data?.data?.ds_hoc_ky ?? [];
+}
+
+function pickCurrentHocKy(list: DkmhHocKy[]): number | null {
+  if (list.length === 0) return null;
+  const now = new Date().setHours(0, 0, 0, 0);
+  for (const hk of list) {
+    const s = parseVnDateKey(hk.ngay_bat_dau_hk);
+    const e = parseVnDateKey(hk.ngay_ket_thuc_hk);
+    if (!isNaN(s) && !isNaN(e) && now >= s && now <= e) return hk.hoc_ky;
+  }
+  return Math.max(...list.map((h) => h.hoc_ky));
+}
+
+async function dkmhFetchTkb(token: string, hocKy?: number): Promise<unknown> {
+  let dsHocKy: DkmhHocKy[] = [];
+  try {
+    dsHocKy = await dkmhHocKyList(token);
+  } catch {
+    // Không lấy được danh sách học kỳ → dùng hocKy truyền vào / fallback.
+  }
+  const chosen = hocKy ?? pickCurrentHocKy(dsHocKy) ?? 20261;
+  const body = (await dkmhPost('/api/sch/w-locdstkbtuanusertheohocky', token, {
+    filter: { hoc_ky: chosen, ten_hoc_ky: '' },
+    additional: { paging: { limit: 100, page: 1 }, ordering: [{ name: null, order_type: null }] },
+  })) as { data?: Record<string, unknown> };
+  // DKMH bọc sẵn { data: {...}, result, code } — tách lớp để client đọc trực tiếp các trường.
+  const inner = (body?.data ?? body) as Record<string, unknown>;
+  return { ...inner, hoc_ky_da_chon: chosen, ds_hoc_ky: dsHocKy };
+}
+
+async function dkmhFetchGrades(token: string): Promise<unknown> {
+  const res = await dkmhFetch('/api/srm/w-locdsdiemsinhvien?hien_thi_mon_theo_hkdk=false', {
+    method: 'POST',
+    headers: dkmhHeaders(token, 'text/plain'),
+    body: '',
+  });
+  if (res.status === 401) throw new Error(DKMH_TOKEN_EXPIRED);
+  if (!res.ok) throw new Error(`DKMH request failed: ${res.status}`);
+  const body = (await res.json()) as { data?: unknown };
+  return body?.data ?? body;
+}
+
+async function dkmhFetchExam(token: string): Promise<unknown> {
+  const body = (await dkmhPost('/api/epm/w-locdslichthisvtheohocky', token, {
+    filter: { hoc_ky: 20252, is_giua_ky: false },
+    additional: { paging: { limit: 100, page: 1 }, ordering: [{ name: null, order_type: null }] },
+  })) as { data?: unknown };
+  return body?.data ?? body;
+}
+
+/** Lấy Bearer DKMH token từ header Authorization hoặc body.token. */
+function extractDkmhToken(req: Request, body: { token?: unknown }): string | null {
+  const auth = req.headers.get('Authorization') || '';
+  const m = auth.match(/^Bearer (.+)$/i);
+  if (m) return m[1].trim() || null;
+  return typeof body.token === 'string' && body.token.trim() ? body.token.trim() : null;
+}
+
+function generateTkbIcs(inputData: unknown): string {
+  const data = (inputData as { data?: Record<string, unknown> })?.data ?? (inputData as Record<string, unknown>);
+  const dsTiet = (data?.ds_tiet_trong_ngay ?? []) as Array<{ tiet?: number; gio_bat_dau?: string; gio_ket_thuc?: string }>;
+  const dsTuan = (data?.ds_tuan_tkb ?? []) as Array<{
+    ds_thoi_khoa_bieu?: Array<{
+      is_nghi_day?: boolean;
+      ngay_hoc?: string;
+      tiet_bat_dau?: number;
+      so_tiet?: number;
+      id_tkb?: string | number;
+      ten_mon?: string;
+      ma_phong?: string;
+      ten_giang_vien?: string;
+      ma_lop?: string;
+    }>;
+  }>;
+  const timeMap: Record<number, { start?: string; end?: string }> = {};
+  for (const s of dsTiet) {
+    if (s?.tiet) timeMap[s.tiet] = { start: s.gio_bat_dau, end: s.gio_ket_thuc };
+  }
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//DH26NHE//TKB Export//VN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Thoi Khoa Bieu DKMH',
+    'X-WR-TIMEZONE:Asia/Ho_Chi_Minh',
+  ];
+  for (const week of dsTuan) {
+    for (const item of week.ds_thoi_khoa_bieu ?? []) {
+      if (item.is_nghi_day || !item.ngay_hoc) continue;
+      const dateStr = item.ngay_hoc.split('T')[0].replace(/-/g, '');
+      const startTiet = item.tiet_bat_dau ?? 0;
+      const endTiet = startTiet + (item.so_tiet ?? 0) - 1;
+      const startInfo = timeMap[startTiet];
+      const endInfo = timeMap[endTiet];
+      if (!startInfo?.start || !endInfo?.end) continue;
+      const startTime = `${startInfo.start.replace(':', '')}00`;
+      const endTime = `${endInfo.end.replace(':', '')}00`;
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
+      lines.push('BEGIN:VEVENT');
+      lines.push(`UID:${item.id_tkb ?? `${startTiet}-${endTiet}`}_${dateStr}@hcmuaf.edu.vn`);
+      lines.push(`DTSTAMP:${stamp}Z`);
+      lines.push(`DTSTART;TZID=Asia/Ho_Chi_Minh:${dateStr}T${startTime}`);
+      lines.push(`DTEND;TZID=Asia/Ho_Chi_Minh:${dateStr}T${endTime}`);
+      lines.push(`SUMMARY:${item.ten_mon ?? ''}`);
+      lines.push(`LOCATION:${item.ma_phong ?? ''}`);
+      lines.push(
+        `DESCRIPTION:GV: ${item.ten_giang_vien ?? ''}\\nLop: ${item.ma_lop ?? ''}\\nTiet: ${startTiet} - ${endTiet}`,
+      );
+      lines.push('BEGIN:VALARM');
+      lines.push('TRIGGER:-PT30M');
+      lines.push('ACTION:DISPLAY');
+      lines.push(`DESCRIPTION:Nhac lich hoc: ${item.ten_mon ?? ''}`);
+      lines.push('END:VALARM');
+      lines.push('END:VEVENT');
+    }
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+/* ── AI (Groq) — biên tập thông báo theo format chung (port từ NotificationPostForm) ── */
+
+function buildAiFormatPrompt(cleanBody: string): string {
+  return `Biên tập nội dung sau thành thông báo phòng hoạt động chuyên nghiệp. Giữ nguyên các placeholder [URL_X].
+
+Viết lại bằng Markdown gọn gàng:
+- **In đậm** cho thông tin quan trọng.
+- Mỗi ý một dòng. Dùng - cho danh sách. Viết hoa chữ cái đầu mỗi mục.
+- Có thể mở đầu bằng "# " cho tiêu đề phần.
+- Sửa lỗi chính tả. KHÔNG thêm thông tin mới.
+- Tiêu đề dưới 60 ký tự.
+- Điểm: 10 (trực tiếp), 5 (online), 15 (đặc biệt).
+
+QUAN TRỌNG: Body dùng newline thực (không dùng \\n). Trả về JSON thuần:
+{"title":"...","body":"...","score":5}
+
+Nội dung: [${cleanBody}]`;
+}
+
+function parseAiJson(content: string): { title?: string; body?: string; score?: number } | null {
+  let c = content.trim();
+  c = c.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  if (c.startsWith('```json')) c = c.replace(/^```json/, '').replace(/```$/, '').trim();
+  else if (c.startsWith('```')) c = c.replace(/^```/, '').replace(/```$/, '').trim();
+  try {
+    return JSON.parse(c) as { title?: string; body?: string; score?: number };
+  } catch {
+    const titleMatch = c.match(/"title"\s*:\s*"([^"]*)"/);
+    const bodyMatch = c.match(/"body"\s*:\s*"([\s\S]*?)"/);
+    const scoreMatch = c.match(/"score"\s*:\s*(\d+)/);
+    if (!titleMatch && !bodyMatch) return null;
+    return {
+      title: titleMatch?.[1] ?? '',
+      body: (bodyMatch?.[1] ?? '').replace(/\\n/g, '\n'),
+      score: scoreMatch ? Number(scoreMatch[1]) : undefined,
+    };
+  }
+}
+
+async function readJsonBody(req: Request): Promise<Record<string, unknown>> {
+  try {
+    return (await req.json()) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 /* ── router ──────────────────────────────── */
 
 export default {
@@ -499,6 +769,143 @@ export default {
         return json({ success: true, sent: tokens.length, ok: result.success, failed: result.failure });
       } catch {
         return json({ error: 'Failed to send notification' }, 500);
+      }
+    }
+
+    // ── DKMH proxy (public, token nằm ở client) ──
+    if (req.method === 'POST' && path === '/api/dkmh/login') {
+      const body = await readJsonBody(req);
+      const username = typeof body.username === 'string' ? body.username : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+      if (!username.trim() || !password) return json({ error: 'Thiếu MSSV/mật khẩu.' }, 400);
+      try {
+        const data = await dkmhLogin(username, password);
+        if (!data) return json({ error: 'Đăng nhập DKMH thất bại.' }, 401);
+        return json(data);
+      } catch {
+        return json({ error: 'Đăng nhập DKMH thất bại.' }, 401);
+      }
+    }
+
+    if (req.method === 'POST' && path === '/api/dkmh/refresh') {
+      const body = await readJsonBody(req);
+      const refreshToken = typeof body.refresh_token === 'string' ? body.refresh_token : '';
+      if (!refreshToken.trim()) {
+        return json({ error: 'Thiếu refresh_token, vui lòng đăng nhập lại.' }, 401);
+      }
+      try {
+        const data = await dkmhRefreshToken(refreshToken);
+        if (!data) return json({ error: 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại.' }, 401);
+        return json(data);
+      } catch {
+        return json({ error: 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại.' }, 401);
+      }
+    }
+
+    if (req.method === 'POST' && path === '/api/dkmh/tkb') {
+      const body = await readJsonBody(req);
+      const token = extractDkmhToken(req, body);
+      if (!token) return json({ error: 'Vui lòng đăng nhập (nhập MSSV + mật khẩu) để xem TKB.' }, 401);
+      const rawHocKy = body.hoc_ky ?? body.hocKy;
+      const hocKy = typeof rawHocKy === 'number' && Number.isFinite(rawHocKy) ? rawHocKy : undefined;
+      try {
+        return json({ data: await dkmhFetchTkb(token, hocKy) });
+      } catch (err) {
+        if (err instanceof Error && err.message === DKMH_TOKEN_EXPIRED) {
+          return json({ error: 'Token DKMH hết hạn.', code: 'TOKEN_EXPIRED' }, 401);
+        }
+        return json({ error: 'Không thể lấy dữ liệu thời khóa biểu.' }, 500);
+      }
+    }
+
+    if (req.method === 'POST' && path === '/api/dkmh/grades') {
+      const body = await readJsonBody(req);
+      const token = extractDkmhToken(req, body);
+      if (!token) return json({ error: 'Vui lòng đăng nhập (nhập MSSV + mật khẩu) để xem điểm.' }, 401);
+      try {
+        return json({ data: await dkmhFetchGrades(token) });
+      } catch (err) {
+        if (err instanceof Error && err.message === DKMH_TOKEN_EXPIRED) {
+          return json({ error: 'Token DKMH hết hạn.', code: 'TOKEN_EXPIRED' }, 401);
+        }
+        return json({ error: 'Không thể lấy dữ liệu điểm.' }, 500);
+      }
+    }
+
+    if (req.method === 'POST' && path === '/api/dkmh/exam') {
+      const body = await readJsonBody(req);
+      const token = extractDkmhToken(req, body);
+      if (!token) return json({ error: 'Vui lòng đăng nhập (nhập MSSV + mật khẩu) để xem lịch thi.' }, 401);
+      try {
+        return json({ data: await dkmhFetchExam(token) });
+      } catch (err) {
+        if (err instanceof Error && err.message === DKMH_TOKEN_EXPIRED) {
+          return json({ error: 'Token DKMH hết hạn.', code: 'TOKEN_EXPIRED' }, 401);
+        }
+        return json({ error: 'Không thể lấy dữ liệu lịch thi.' }, 500);
+      }
+    }
+
+    if (req.method === 'GET' && path === '/api/dkmh/tkb/export-ics') {
+      const token = url.searchParams.get('token')?.trim();
+      if (!token) return json({ error: 'Vui lòng đăng nhập để xuất TKB.' }, 401);
+      const hocKyParam = Number(url.searchParams.get('hoc_ky'));
+      const hocKy = Number.isFinite(hocKyParam) && hocKyParam > 0 ? hocKyParam : undefined;
+      try {
+        const data = await dkmhFetchTkb(token, hocKy);
+        const icsText = generateTkbIcs(data);
+        return new Response(icsText, {
+          headers: {
+            'Content-Type': 'text/calendar',
+            'Content-Disposition': 'attachment; filename=tkb_hcmuaf.ics',
+            ...corsHeaders(),
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && err.message === DKMH_TOKEN_EXPIRED) {
+          return json({ error: 'Token DKMH hết hạn.', code: 'TOKEN_EXPIRED' }, 401);
+        }
+        return json({ error: 'Không thể tạo file export.' }, 500);
+      }
+    }
+
+    // POST /api/ai/format — biên tập nội dung thông báo bằng Groq (user đăng nhập Firebase).
+    if (req.method === 'POST' && path === '/api/ai/format') {
+      try {
+        await requireUser(req, env);
+      } catch (e) {
+        return e as Response;
+      }
+      if (!env.GROQ_API_KEY) {
+        return json({ error: 'AI chưa được cấu hình trên Worker (GROQ_API_KEY).' }, 503);
+      }
+      const body = await readJsonBody(req);
+      const text = typeof body.text === 'string' ? body.text : '';
+      if (!text.trim()) return json({ error: 'Thiếu nội dung cần biên tập.' }, 400);
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.GROQ_API_KEY}` },
+          body: JSON.stringify({
+            // groq/compound-mini đã bị Groq loại bỏ (404) — dùng gpt-oss-120b + JSON mode
+            model: 'openai/gpt-oss-120b',
+            max_tokens: 8192,
+            reasoning_effort: 'low',
+            response_format: { type: 'json_object' },
+            messages: [{ role: 'user', content: buildAiFormatPrompt(text) }],
+          }),
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          const detail = errText.slice(0, 200);
+          return json({ error: `Groq API lỗi (HTTP ${res.status})${detail ? `: ${detail}` : ''}` }, 502);
+        }
+        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        const parsed = parseAiJson(data.choices?.[0]?.message?.content ?? '');
+        if (!parsed) return json({ error: 'AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.' }, 502);
+        return json({ title: parsed.title ?? '', body: parsed.body ?? '', score: parsed.score });
+      } catch {
+        return json({ error: 'Không gọi được AI. Vui lòng thử lại sau.' }, 502);
       }
     }
 

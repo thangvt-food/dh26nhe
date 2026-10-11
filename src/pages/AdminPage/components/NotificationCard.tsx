@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Award, CalendarDays, ChevronDown, DoorOpen, Pencil, Trash2, BadgeCheck } from 'lucide-react';
 import { getAvatarGradient, getInitials, cn } from '@/utils/cn';
+import { RichText } from '@/components/shared/RichText';
 import type { BroadcastNotification } from '@/types/submission.types';
 
 interface Props {
@@ -60,9 +61,9 @@ export function NotificationCard({ item, index, semester, onEdit, onDelete }: Pr
 
       <div className="space-y-1.5">
         <h3 className="text-[14px] font-bold text-black dark:text-white">{item.title}</h3>
-        <p className={cn('text-[13px] text-black/70 dark:text-white/70 leading-relaxed whitespace-pre-line', !expanded && long && 'line-clamp-3')}>
-          {item.body}
-        </p>
+        <div className={cn('overflow-hidden transition-all', !expanded && long && 'max-h-[4.6em]')}>
+          <RichText text={item.body} />
+        </div>
         {long && (
           <button
             onClick={() => setExpanded((v) => !v)}

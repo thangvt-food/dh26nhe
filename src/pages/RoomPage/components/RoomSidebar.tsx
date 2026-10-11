@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Loader2,
   MessageSquare,
@@ -15,6 +15,7 @@ import {
   LogOut,
   ExternalLink,
   Plus,
+  Home,
 } from 'lucide-react';
 import { SEMESTERS } from '@/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -122,16 +123,26 @@ export function RoomSidebar({
       {/* Header: brand + suggest + semester pill */}
       <div className="px-4 py-3 border-b border-black/5 dark:border-white/10 shrink-0">
         <div className="flex items-center justify-between">
-          <span
+          <Link
+            to="/"
             className={cn(
-              'font-extrabold text-[#3390ec] tracking-tight',
+              'font-extrabold text-[#3390ec] tracking-tight hover:opacity-80 transition-opacity',
               isMobile ? 'text-[22.5px]' : 'text-[25.5px]',
             )}
             style={{ fontFamily: "'Segoe UI', 'Roboto', system-ui, sans-serif", fontWeight: 800, letterSpacing: '-0.3px' }}
+            title="Về trang chủ"
           >
             DH26NHE
-          </span>
+          </Link>
           <div className="flex items-center gap-1">
+            <Link
+              to="/"
+              className="flex items-center justify-center w-7 h-7 rounded-full text-[#707579] dark:text-[#9aa0a6] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+              aria-label="Về trang chủ"
+              title="Về trang chủ"
+            >
+              <Home className="h-4 w-4" />
+            </Link>
             <div className="relative group">
               <button
                 onClick={() => toast('Tính năng đề xuất hoạt động đang phát triển.', 'info')}

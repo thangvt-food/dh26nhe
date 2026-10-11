@@ -18,3 +18,14 @@ keyCloud.json
 firebase-debug.log
 firebaserc
 .firebaserc
+
+# Trạng thái deploy Firebase
+.firebase/
+
+# Command Code session data
+.commandcode/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example

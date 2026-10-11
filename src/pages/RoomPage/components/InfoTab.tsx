@@ -20,6 +20,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { submissionService } from '@/services/submissionService';
 import { useSubmissionCount } from '../hooks/useSubmissionCount';
 import { TelegramChatPattern } from '@/components/shared/TelegramChatPattern';
+import { RichText } from '@/components/shared/RichText';
 import { TelegramMediaViewer } from '@/components/shared/TelegramMediaViewer';
 import { getAvatarGradient, getInitials, cn } from '@/utils/cn';
 import type { ActivitySubmission, RoomDefinition, SubmissionStatus } from '@/types/submission.types';
@@ -292,9 +293,7 @@ export function InfoTab({ semester, activity, onSwitchToChat }: Props) {
                   <span className="text-[14px] font-bold text-black dark:text-white">
                     {activity?.name}
                   </span>
-                  <p className="text-[13px] text-black/80 dark:text-white/80 leading-relaxed whitespace-pre-wrap">
-                    {activity?.description}
-                  </p>
+                  <RichText text={activity?.description ?? ''} className="text-[13px] text-black/80 dark:text-white/80" />
                   {activity?.imageUrl && (
                     <div className="pt-2">
                       <button onClick={() => setViewerOpen(true)} className="block w-full">

@@ -1,4 +1,5 @@
-import { Menu, BadgeCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Menu, BadgeCheck, Home } from 'lucide-react';
 import { SEMESTERS } from '@/firebase';
 import { useAdmin } from '../context/AdminContext';
 
@@ -44,6 +45,14 @@ export function AdminHeader({ onToggleSidebar }: { onToggleSidebar: () => void }
         </div>
 
         <div className="flex items-center gap-2">
+          <Link
+            to="/"
+            className="w-9 h-9 rounded-lg border border-[#dadce0] dark:border-[#3f4147] flex items-center justify-center text-[#707579] dark:text-[#9aa0a6] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+            aria-label="Về trang chủ"
+            title="Về trang chủ"
+          >
+            <Home size={17} />
+          </Link>
           <div className="flex items-center gap-2 bg-white dark:bg-[#1e1f22] border border-[#dadce0] dark:border-[#3f4147] rounded-lg shadow-sm px-2.5 py-1.5">
             <label htmlFor="admin-semester" className="text-[11px] font-semibold text-[#707579] dark:text-[#9aa0a6]">
               Học kỳ:

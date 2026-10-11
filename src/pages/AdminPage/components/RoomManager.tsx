@@ -14,14 +14,21 @@ import {
   Layers,
   Image as ImageIcon,
   Send,
+  Heading1,
+  Bold,
+  List,
+  ClipboardPaste,
+  Sparkles,
 } from 'lucide-react';
 import { roomService } from '@/services/submissionService';
 import { notificationService, roomToNotification } from '@/services/notificationService';
+import { aiService } from '@/services/aiService';
 import { useRoomData } from '@/pages/RoomPage/hooks/useRoomData';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRoomDeletion } from '../hooks/useRoomDeletion';
 import { DeleteRoomDialog } from './DeleteRoomDialog';
 import { NotificationCard } from './NotificationCard';
+import { RichText, NOTIFICATION_TEMPLATE } from '@/components/shared/RichText';
 import { toast } from '@/components/shared/Toast';
 import { getAvatarGradient, getInitials, cn } from '@/utils/cn';
 import type { RoomDefinition, BroadcastNotification } from '@/types/submission.types';
@@ -45,6 +52,7 @@ export function RoomManager({ semester }: { semester: string }) {
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   const deletion = useRoomDeletion();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -55,6 +63,22 @@ export function RoomManager({ semester }: { semester: string }) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const imgRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Chèn snippet format chung tại vị trí con trỏ của textarea. */
+  const insertSnippet = (before: string, after = '', placeholder = '') => {
+    const ta = taRef.current;
+    const start = ta?.selectionStart ?? description.length;
+    const end = ta?.selectionEnd ?? start;
+    const selected = description.slice(start, end) || placeholder;
+    const next = description.slice(0, start) + before + selected + after + description.slice(end);
+    setDescription(next);
+    requestAnimationFrame(() => {
+      ta?.focus();
+      const pos = start + before.length + selected.length + after.length;
+      ta?.setSelectionRange(pos, pos);
+    });
+  };
 
   useEffect(() => {
     if (!imageFile) return;
@@ -130,6 +154,34 @@ export function RoomManager({ semester }: { semester: string }) {
       toast(err instanceof Error ? err.message : 'Lưu thất bại.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** AI biên tập nội dung thô theo format chung (port handleAiAssist từ bản gốc). */
+  const handleAiAssist = async () => {
+    if (!description.trim()) {
+      toast('Nhập nội dung thô trước rồi để AI biên tập.', 'info');
+      return;
+    }
+    setAiLoading(true);
+    try {
+      // Giữ URL an toàn khỏi AI bằng placeholder [URL_X], xong khôi phục lại.
+      const urlMap: Record<string, string> = {};
+      const cleanBody = description.replace(/https?:\/\/[^\s\n)]+/g, (url) => {
+        const key = `[URL_${Object.keys(urlMap).length + 1}]`;
+        urlMap[key] = url;
+        return key;
+      });
+      const result = await aiService.formatNotification(cleanBody);
+      const restore = (s: string) => s.replace(/\[URL_\d+\]/g, (m) => urlMap[m] || m);
+      if (result.title) setName(restore(result.title));
+      if (result.body) setDescription(restore(result.body));
+      if (result.score) setPoints(String(result.score));
+      toast('AI đã biên tập nội dung theo format chung. Kiểm tra lại trước khi đăng nhé!', 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'AI biên tập thất bại.', 'error');
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -423,16 +475,80 @@ export function RoomManager({ semester }: { semester: string }) {
                     </div>
                   </div>
                 </div>
-                <label className={labelCls}>
-                  Thể lệ / nội dung thông báo
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Hướng dẫn nộp minh chứng, thời gian, địa điểm..."
-                    rows={5}
-                    className={`${inputCls} resize-y min-h-[120px]`}
-                  />
-                </label>
+                <div>
+                  <span className={labelCls}>Thể lệ / nội dung thông báo</span>
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void handleAiAssist()}
+                      disabled={aiLoading}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white text-[11.5px] font-bold shadow-sm hover:opacity-90 disabled:opacity-60 mr-1"
+                      title="Dùng AI biên tập nội dung theo format chung (giống bản gốc)"
+                    >
+                      {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                      {aiLoading ? 'AI đang viết…' : 'AI sửa'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertSnippet('# ', '', 'Tiêu đề phần')}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-[11.5px] font-bold text-[#3c4043] dark:text-[#e8eaed] hover:bg-black/10 dark:hover:bg-white/15"
+                      title="Chèn tiêu đề phần"
+                    >
+                      <Heading1 size={13} /> Tiêu đề
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertSnippet('**', '**', 'chữ đậm')}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-[11.5px] font-bold text-[#3c4043] dark:text-[#e8eaed] hover:bg-black/10 dark:hover:bg-white/15"
+                      title="In đậm đoạn đang chọn"
+                    >
+                      <Bold size={13} /> Đậm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertSnippet('- ', '', 'một mục trong danh sách')}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-[11.5px] font-bold text-[#3c4043] dark:text-[#e8eaed] hover:bg-black/10 dark:hover:bg-white/15"
+                      title="Chèn gạch đầu dòng"
+                    >
+                      <List size={13} /> Danh sách
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDescription((d) => (d.trim() ? `${d.trimEnd()}\n\n${NOTIFICATION_TEMPLATE}` : NOTIFICATION_TEMPLATE))
+                      }
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#e8f3fb] dark:bg-[#3390ec]/15 text-[11.5px] font-bold text-[#3390ec] hover:bg-[#d7eafb] dark:hover:bg-[#3390ec]/25"
+                      title="Chèn mẫu format chung"
+                    >
+                      <ClipboardPaste size={13} /> Chèn mẫu
+                    </button>
+                    <span className="text-[11px] text-[#a2acb4] hidden sm:inline">
+                      Link dán thẳng vào sẽ tự bấm được.
+                    </span>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <textarea
+                      ref={taRef}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder={'# Thông báo\n- Thời gian: …\n- Địa điểm: …\n- Hạn nộp minh chứng: …\n**Lưu ý:** …'}
+                      rows={7}
+                      className={`${inputCls} resize-y min-h-[170px] leading-relaxed`}
+                    />
+                    <div className="rounded-xl border border-[#dadce0] dark:border-[#3f4147] bg-[#fafbfc] dark:bg-white/5 p-3.5 min-h-[170px] max-h-72 overflow-y-auto">
+                      <p className="text-[10.5px] font-bold uppercase tracking-wider text-[#707579] dark:text-[#9aa0a6] mb-2">
+                        Xem trước cách hiển thị
+                      </p>
+                      {description.trim() ? (
+                        <RichText text={description} />
+                      ) : (
+                        <p className="text-[12.5px] text-[#a2acb4] italic">
+                          Nội dung bạn nhập sẽ hiển thị cho sinh viên đúng như ở đây.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <div>
                   <span className={labelCls}>Ảnh bìa / minh hoạ</span>
                   <input

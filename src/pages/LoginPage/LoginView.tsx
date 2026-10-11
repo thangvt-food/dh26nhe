@@ -27,7 +27,7 @@ export function LoginView() {
   usePageTracking('login');
 
   useEffect(() => {
-    if (!loading && currentUser) navigate('/rooms', { replace: true });
+    if (!loading && currentUser) navigate('/', { replace: true });
   }, [loading, currentUser, navigate]);
 
   const handleGoogleLogin = async () => {
@@ -36,7 +36,7 @@ export function LoginView() {
     try {
       await login();
       toast('Đăng nhập thành công. Chào mừng bạn quay lại!', 'success');
-      navigate('/rooms', { replace: true });
+      navigate('/', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Đăng nhập thất bại. Vui lòng thử lại.';
       toast(message, 'error');

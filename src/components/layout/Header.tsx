@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutGrid, User, ShieldCheck, LogOut, Moon, Sun } from 'lucide-react';
+import { Award, CalendarClock, Home, LayoutGrid, User, ShieldCheck, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/components/shared/Toast';
@@ -44,7 +44,10 @@ export function Header() {
         </Link>
         {currentUser && (
           <nav className="hidden sm:flex items-center gap-1">
+            {navItem('/', 'Trang chủ', location.pathname === '/')}
             {navItem('/rooms', 'Phòng hoạt động', location.pathname.startsWith('/rooms'))}
+            {navItem('/tkb', 'TKB', location.pathname.startsWith('/tkb'))}
+            {navItem('/drl', 'ĐRL', location.pathname.startsWith('/drl'))}
             {navItem('/profile', 'Hồ sơ', location.pathname.startsWith('/profile'))}
             {isAdmin && navItem('/admin', 'Quản trị', location.pathname.startsWith('/admin'))}
           </nav>
@@ -76,7 +79,10 @@ export function BottomNavBar() {
   const { isAdmin } = useAuth();
   const location = useLocation();
   const items = [
+    { to: '/', label: 'Trang chủ', icon: Home },
     { to: '/rooms', label: 'Phòng', icon: LayoutGrid },
+    { to: '/tkb', label: 'TKB', icon: CalendarClock },
+    { to: '/drl', label: 'ĐRL', icon: Award },
     { to: '/profile', label: 'Hồ sơ', icon: User },
     ...(isAdmin ? [{ to: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
   ];
@@ -84,7 +90,7 @@ export function BottomNavBar() {
     <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 backdrop-blur-xl bg-white/90 dark:bg-[#17212b]/90 border-t border-black/5 dark:border-white/10">
       <div className="flex">
         {items.map(({ to, label, icon: Icon }) => {
-          const active = location.pathname.startsWith(to);
+          const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
           return (
             <Link
               key={to}

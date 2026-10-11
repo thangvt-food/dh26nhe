@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Inbox, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { Inbox, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { SEMESTERS } from '@/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
@@ -10,11 +9,11 @@ import { useExportActivities } from './hooks/useExportActivities';
 import { ProfileHeader } from './components/ProfileHeader';
 import { ScoreSummary } from './components/ScoreSummary';
 import { ActivityHistory } from './components/ActivityHistory';
+import { FloatingHomeButton } from '@/components/shared/FloatingHomeButton';
 import { cn } from '@/utils/cn';
 
 export function ProfileView() {
   const { currentUser } = useAuth();
-  const navigate = useNavigate();
   const [semester, setSemester] = useState<string>(SEMESTERS[0]);
   usePageTracking('profile');
 
@@ -50,14 +49,6 @@ export function ProfileView() {
   return (
     <div className="min-h-screen bg-[#e7ebf0] dark:bg-[#0e1621]">
       <div className="max-w-2xl mx-auto p-4 md:p-6 pb-24 md:pb-8 space-y-4">
-        <button
-          onClick={() => navigate('/rooms')}
-          className="flex items-center gap-1.5 text-[13px] font-semibold text-[#707579] dark:text-[#9aa0a6] hover:text-[#3390ec] transition-colors"
-        >
-          <ArrowLeft size={16} />
-          Quay lại phòng
-        </button>
-
         <div className="bg-white dark:bg-[#212121] rounded-2xl p-5 border border-black/5 dark:border-white/10">
           <ProfileHeader user={currentUser} />
         </div>
@@ -121,6 +112,7 @@ export function ProfileView() {
           fetchUserActivities={fetchUserActivities}
         />
       </div>
+      <FloatingHomeButton raised />
     </div>
   );
 }

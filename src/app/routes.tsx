@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { RequireAuth, AdminRoute } from '@/components/shared/AdminRoute';
 import { Header, BottomNavBar } from '@/components/layout/Header';
 import { LoginView } from '@/pages/LoginPage/LoginView';
+import { HomeView } from '@/pages/HomePage/HomeView';
+import { TkbView } from '@/pages/TkbPage/TkbView';
+import { DrlView } from '@/pages/DrlPage/DrlView';
 import { RoomView } from '@/pages/RoomPage/RoomView';
 import { ProfileView } from '@/pages/ProfilePage/ProfileView';
 import { AdminView } from '@/pages/AdminPage/AdminView';
@@ -25,7 +28,23 @@ export function AppRoutes() {
         path="/"
         element={
           <RequireAuth>
-            <Navigate to="/rooms" replace />
+            <HomeView />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/tkb"
+        element={
+          <RequireAuth>
+            <TkbView />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/drl"
+        element={
+          <RequireAuth>
+            <DrlView />
           </RequireAuth>
         }
       />
@@ -127,7 +146,7 @@ export function AppRoutes() {
           </RequireAuth>
         }
       />
-      <Route path="*" element={<Navigate to="/rooms" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
