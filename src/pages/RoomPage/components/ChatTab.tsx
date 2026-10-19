@@ -141,6 +141,16 @@ export function ChatTab({ semester, activity }: Props) {
         fileName: `minh_chung_${activity.name}`,
         userName: currentUser.displayName || currentUser.email.split('@')[0],
       });
+      // Báo Discord có minh chứng mới (fire-and-forget, không chặn UI).
+      void apiService.notifySubmission({
+        activityName: activity.name,
+        userName: currentUser.displayName || currentUser.email.split('@')[0],
+        email: currentUser.email,
+        semester,
+        fileName: files.map((f) => f.name).join(', '),
+        fileUrl: result.fileUrls[0] ?? '',
+        note: description,
+      });
     } catch (err) {
       setItems((prev) => prev.filter((p) => p.id !== tempId));
       toast(err instanceof Error ? err.message : 'Tải lên thất bại.', 'error');

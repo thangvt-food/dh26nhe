@@ -51,6 +51,32 @@ export const apiService = {
     }
   },
 
+  /** Báo Discord có minh chứng mới qua Worker. Fire-and-forget, không ném lỗi. */
+  async notifySubmission(args: {
+    activityName: string;
+    userName?: string;
+    email?: string;
+    semester?: string;
+    fileName?: string;
+    fileUrl?: string;
+    note?: string;
+  }): Promise<boolean> {
+    const base = apiBase();
+    if (!base) return false;
+    const token = await userToken();
+    if (!token) return false;
+    try {
+      const res = await fetch(`${base}/api/notify-submission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(args),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
   /** Đăng tin + push FCM qua Worker (admin). Ném lỗi để caller toast. */
   async broadcastNotification(args: {
     title: string;

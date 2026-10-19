@@ -66,6 +66,29 @@ export const storageService = {
     return await res.blob();
   },
 
+  /**
+   * Nén minh chứng server-side qua Worker → Blob .zip (thay GAS download-zip).
+   * Trả null khi Worker chưa cấu hình (caller fallback nén client bằng JSZip).
+   */
+  async fetchEvidenceZip(
+    files: Array<{ url?: string; text?: string; name: string }>,
+    archiveName: string,
+  ): Promise<{ blob: Blob; skipped: number } | null> {
+    const base = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '');
+    if (!base) return null;
+    const token = (await auth.currentUser?.getIdToken()) ?? null;
+    const res = await fetch(`${base}/api/storage/zip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ files, archiveName }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(data?.error ?? `Nén file thất bại (HTTP ${res.status}).`);
+    }
+    return { blob: await res.blob(), skipped: Number(res.headers.get('X-Zip-Skipped') || 0) };
+  },
+
   async deleteFilesByUrls(urls: string[]): Promise<void> {
     await Promise.allSettled(
       urls.filter(Boolean).map((url) =>

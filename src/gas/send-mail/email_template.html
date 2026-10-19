@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DH26NHE</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Roboto, Helvetica Neue, Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #eef1f5;
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+      }
+      .container {
+        max-width: 600px;
+        margin: 30px auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+      }
+      .header {
+        background-color: #1f2937;
+        padding: 28px;
+        text-align: center;
+      }
+      .brand-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #ffffff;
+        margin: 0 0 6px;
+        letter-spacing: 1px;
+      }
+      .brand-subtitle {
+        font-size: 13px;
+        color: #9ca3af;
+        margin: 0;
+      }
+      .content {
+        padding: 28px;
+      }
+      .greeting {
+        font-size: 17px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0 0 12px;
+      }
+      .message {
+        font-size: 15px;
+        line-height: 1.65;
+        color: #374151;
+        margin: 0 0 18px;
+      }
+      .box {
+        background-color: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+      }
+      .row {
+        padding: 5px 0;
+        font-size: 15px;
+        color: #374151;
+      }
+      .label {
+        font-weight: 700;
+        color: #111827;
+      }
+      .value {
+        color: #374151;
+      }
+      .value.ok {
+        font-weight: 700;
+        color: #15803d;
+      }
+      .btn-wrap {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .btn {
+        display: inline-block;
+        background: #2563eb;
+        color: #ffffff;
+        text-decoration: none;
+        padding: 12px 32px;
+        font-weight: 700;
+        font-size: 15px;
+        border-radius: 6px;
+      }
+      .btn-note {
+        font-size: 12px;
+        color: #6b7280;
+        margin: 8px 0 0;
+      }
+      .dash-box {
+        background-color: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 16px;
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .dash-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0 0 10px;
+      }
+      .btn-out {
+        display: inline-block;
+        color: #2563eb;
+        text-decoration: none;
+        padding: 9px 24px;
+        font-weight: 700;
+        font-size: 14px;
+        border: 1px solid #2563eb;
+        border-radius: 6px;
+      }
+      .note-box {
+        background-color: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 20px;
+      }
+      .note-text {
+        margin: 0;
+        font-size: 13px;
+        color: #6b7280;
+        line-height: 1.5;
+      }
+      .footer {
+        background-color: #f9fafb;
+        border-top: 1px solid #e5e7eb;
+        padding: 20px 28px;
+      }
+      .f-brand {
+        font-size: 14px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0 0 2px;
+        text-align: center;
+      }
+      .f-desc {
+        font-size: 12px;
+        color: #6b7280;
+        margin: 0 0 12px;
+        text-align: center;
+      }
+      .f-links {
+        font-size: 13px;
+        color: #6b7280;
+        padding: 10px 0;
+        border-top: 1px solid #e5e7eb;
+        text-align: center;
+      }
+      .f-links a {
+        color: #2563eb;
+        text-decoration: none;
+      }
+      .f-copy {
+        font-size: 11px;
+        color: #9ca3af;
+        margin: 10px 0 0;
+        text-align: center;
+      }
+      .f-auto {
+        font-size: 10px;
+        color: #9ca3af;
+        margin: 4px 0 0;
+        text-align: center;
+      }
+      @media only screen and (max-width: 480px) {
+        .container { margin: 10px; }
+        .header { padding: 22px 18px; }
+        .content { padding: 20px 18px 16px; }
+        .footer { padding: 16px 18px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="brand-title">DH26NHE</div>
+        <div class="brand-subtitle">Hệ thống quản lý điểm rèn luyện &amp; minh chứng hoạt động sinh viên</div>
+      </div>
+      <div class="content">
+        <?!= contentHtml ?>
+      </div>
+      <div class="footer">
+        <p class="f-brand">BAN CÁN SỰ LỚP DH26NHE</p>
+        <p class="f-desc">Hệ thống quản lý điểm rèn luyện &amp; minh chứng hoạt động sinh viên</p>
+        <div class="f-links">
+          <a href="https://dh26nhe.web.app">dh26nhe.web.app</a> &nbsp;|&nbsp; Firebase &amp; Google Cloud
+        </div>
+        <p class="f-copy">&copy; 2026 DH26NHE Cloud Worker System</p>
+        <p class="f-auto">Đây là email tự động. Vui lòng không trả lời.</p>
+      </div>
+    </div>
+  </body>
+</html>

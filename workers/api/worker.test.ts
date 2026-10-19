@@ -7,6 +7,7 @@ const ENV = {
   DEFAULT_CLASS_NAME: 'DH26NHE',
   DEFAULT_SEMESTER: 'HK1N1',
   GAS_WEB_APP_URL: 'https://gas.example/exec',
+  DISCORD_WEBHOOK_URL: 'https://discord.example/webhook',
 };
 
 function b64url(obj: unknown): string {
@@ -60,6 +61,12 @@ function mockFetchRouter() {
     }
     if (url === 'https://gas.example/exec') {
       return new Response('ok', { status: 200 });
+    }
+    if (url === 'https://discord.example/webhook') {
+      return new Response(null, { status: 204 });
+    }
+    if (url.startsWith('https://firebasestorage.googleapis.com/v0/b/dh26nhe.firebasestorage.app/o/')) {
+      return new Response('evidence-bytes', { status: 200 });
     }
     if (url.includes('firebasedatabase.app')) {
       return new Response(JSON.stringify({}), { status: 200 });
@@ -145,6 +152,59 @@ describe('API Worker — send-email-upload', () => {
   });
 });
 
+describe('API Worker — notify-submission', () => {
+  it('thiếu token → 401', async () => {
+    const res = await worker.fetch(
+      req('/api/notify-submission', {
+        method: 'POST',
+        body: JSON.stringify({ activityName: 'Hoạt động A' }),
+      }),
+      ENV,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('token hợp lệ → gửi embed tới Discord', async () => {
+    const token = await makeToken(validClaims());
+    fetchMock.mockClear();
+    const res = await worker.fetch(
+      req('/api/notify-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ activityName: 'Hoạt động A', userName: 'An', email: 'a@x.com' }),
+      }),
+      ENV,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    const discordCall = fetchMock.mock.calls.find((c) => String(c[0]) === 'https://discord.example/webhook');
+    expect(discordCall).toBeDefined();
+    expect(String((discordCall as unknown[])[1] && ((discordCall as unknown[])[1] as RequestInit).body)).toContain(
+      'Hoạt động A',
+    );
+  });
+
+  it('chưa cấu hình webhook → skip, không gọi Discord', async () => {
+    const token = await makeToken(validClaims());
+    fetchMock.mockClear();
+    const res = await worker.fetch(
+      req('/api/notify-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ activityName: 'Hoạt động B' }),
+      }),
+      { ...ENV, DISCORD_WEBHOOK_URL: undefined },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      skipped: true,
+      reason: 'Discord webhook chưa được cấu hình.',
+    });
+    expect(fetchMock.mock.calls.some((c) => String(c[0]) === 'https://discord.example/webhook')).toBe(false);
+  });
+});
+
 describe('API Worker — broadcast', () => {
   it('thiếu admin claim → 403', async () => {
     const token = await makeToken(validClaims({ admin: false }));
@@ -192,5 +252,62 @@ describe('API Worker — broadcast', () => {
       ENV,
     );
     expect(res.status).toBe(503);
+  });
+});
+
+describe('API Worker — storage zip', () => {
+  it('thiếu token → 401', async () => {
+    const res = await worker.fetch(
+      req('/api/storage/zip', {
+        method: 'POST',
+        body: JSON.stringify({ files: [{ url: 'https://x', name: 'a.txt' }] }),
+      }),
+      ENV,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('token hợp lệ → trả file ZIP (PK header) gồm cả entry text', async () => {
+    const token = await makeToken(validClaims());
+    fetchMock.mockClear();
+    const res = await worker.fetch(
+      req('/api/storage/zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          files: [
+            {
+              url: 'https://firebasestorage.googleapis.com/v0/b/dh26nhe.firebasestorage.app/o/a.png?alt=media',
+              name: 'root/a.png',
+            },
+            { name: 'root/thong_tin.txt', text: 'hello' },
+          ],
+          archiveName: 'DH26NHE_test.zip',
+        }),
+      }),
+      ENV,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('application/zip');
+    expect(res.headers.get('Content-Disposition')).toContain('DH26NHE_test.zip');
+    expect(res.headers.get('X-Zip-Skipped')).toBe('0');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(bytes[0]).toBe(0x50);
+    expect(bytes[1]).toBe(0x4b);
+    expect(bytes[2]).toBe(0x03);
+    expect(bytes[3]).toBe(0x04);
+  });
+
+  it('URL ngoài bucket DH26NHE → 400', async () => {
+    const token = await makeToken(validClaims());
+    const res = await worker.fetch(
+      req('/api/storage/zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ files: [{ url: 'https://evil.example/o/a.png', name: 'a.png' }] }),
+      }),
+      ENV,
+    );
+    expect(res.status).toBe(400);
   });
 });

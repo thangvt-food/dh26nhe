@@ -5,6 +5,7 @@
  *   GET  /health | /ping                       — kiểm tra trạng thái
  *   GET  /api/config                           — config công khai
  *   POST /send-email-upload                    — relay email qua GAS (user đăng nhập)
+ *   POST /api/notify-submission                — báo Discord khi có minh chứng mới (user đăng nhập)
  *   POST /api/notifications/broadcast          — ghi RTDB notifications + push FCM (admin)
  *   POST /api/notifications/send-to-user       — push FCM tới 1 user (admin)
  *   POST /api/dkmh/login                       — đăng nhập DKMH (MSSV + mật khẩu) → access/refresh token
@@ -15,6 +16,7 @@
  *   GET  /api/dkmh/tkb/export-ics              — xuất TKB dạng .ics (?token=&hoc_ky=)
  *   POST /api/ai/format                        — biên tập thông báo (Groq, secret GROQ_API_KEY)
  *   POST /api/storage/fetch                    — proxy tải minh chứng (fix CORS cho export ZIP)
+ *   POST /api/storage/zip                      — tải + nén minh chứng server-side, trả file .zip
  *
  * KHÔNG port (ngoài phạm vi 3 trang + admin): Drive export, news scrape,
  * quiz GCN, reports, suggestions, posts — client gọi Firebase trực tiếp.
@@ -27,6 +29,7 @@
  *   2. (tuỳ chọn FCM) npx wrangler secret put FCM_SERVICE_ACCOUNT_JSON  (dán service account JSON)
  *      (tuỳ chọn)     npx wrangler secret put API_KEY
  *      (tuỳ chọn)     npx wrangler secret put GAS_WEB_APP_URL
+ *      (tuỳ chọn)     npx wrangler secret put DISCORD_WEBHOOK_URL
  *   3. npx wrangler deploy   (trong thư mục workers/api/)
  *   4. Client: VITE_API_URL=https://dh26nhe-api.<sub>.workers.dev (để trống = chạy pure client-side)
  */
@@ -37,6 +40,7 @@ interface Env {
   DEFAULT_CLASS_NAME?: string;
   DEFAULT_SEMESTER?: string;
   GAS_WEB_APP_URL?: string;
+  DISCORD_WEBHOOK_URL?: string;
   API_KEY?: string;
   FCM_SERVICE_ACCOUNT_JSON?: string;
   GROQ_API_KEY?: string;
@@ -52,7 +56,7 @@ interface TokenClaims {
 const GOOGLE_JWKS_URL =
   'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const DEFAULT_GAS_URL =
-  'https://script.google.com/macros/s/AKfycbzdjZ3NCgwQY6ByHc1J7-hBgM69bwORXxzZ91j-pKKcnqii0UsIG7D34u21xzt13EJ6/exec';
+  'https://script.google.com/macros/s/AKfycbz-3nPgznlZVf8SSgZbvpnrgd9kKtGhoSN_o-zu2R2_Jqpu98ZlouuaUkfKhuMUXzuBrA/exec';
 
 let jwksCache: { keys: Array<{ kid?: string; [k: string]: unknown }>; fetchedAt: number } | null = null;
 
@@ -597,6 +601,98 @@ async function readJsonBody(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
+/* ── ZIP store (không nén) — export minh chứng server-side ── */
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** Chuẩn hoá đường dẫn trong ZIP: bỏ '..', ký tự cấm, giữ cấu trúc thư mục. */
+function sanitizeZipPath(raw: string): string {
+  return raw
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((segment) => segment && segment !== '.' && segment !== '..')
+    .map((segment) => segment.replace(/[\\/:*?"<>|]/g, '_'))
+    .join('/');
+}
+
+function buildZipStore(entries: Array<{ name: string; data: Uint8Array }>): Uint8Array {
+  const encoder = new TextEncoder();
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const nameBytes = encoder.encode(entry.name);
+    const crc = crc32(entry.data);
+    const local = new Uint8Array(30 + nameBytes.length + entry.data.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, dosTime, true);
+    lv.setUint16(12, dosDate, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, entry.data.length, true);
+    lv.setUint32(22, entry.data.length, true);
+    lv.setUint16(26, nameBytes.length, true);
+    local.set(nameBytes, 30);
+    local.set(entry.data, 30 + nameBytes.length);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, dosTime, true);
+    cv.setUint16(14, dosDate, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, entry.data.length, true);
+    cv.setUint32(24, entry.data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+
+    locals.push(local);
+    centrals.push(central);
+    offset += local.length;
+  }
+  const centralSize = centrals.reduce((sum, c) => sum + c.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true);
+
+  const out = new Uint8Array(offset + centralSize + 22);
+  let pos = 0;
+  for (const chunk of [...locals, ...centrals, eocd]) {
+    out.set(chunk, pos);
+    pos += chunk.length;
+  }
+  return out;
+}
+
 /* ── router ──────────────────────────────── */
 
 export default {
@@ -663,6 +759,51 @@ export default {
         return json({ error: `Failed to delegate email to GAS: ${err instanceof Error ? err.message : 'unknown'}` }, 500);
       }
       return json({ message: 'Email request sent to GAS' });
+    }
+
+    // POST /api/notify-submission — báo Discord khi có minh chứng mới (webhook giữ ở secret).
+    if (req.method === 'POST' && path === '/api/notify-submission') {
+      try {
+        await requireUser(req, env);
+      } catch (e) {
+        return e as Response;
+      }
+      if (!env.DISCORD_WEBHOOK_URL) {
+        return json({ success: true, skipped: true, reason: 'Discord webhook chưa được cấu hình.' });
+      }
+      let body: { activityName?: string; userName?: string; email?: string; semester?: string; fileName?: string; fileUrl?: string; note?: string };
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return json({ error: 'Invalid JSON body' }, 400);
+      }
+      if (!body.activityName) {
+        return json({ error: 'Thiếu activityName.' }, 400);
+      }
+      const clip = (value: string | undefined, max: number) => (value ?? '').slice(0, max);
+      const fields: Array<{ name: string; value: string; inline: boolean }> = [
+        { name: 'Sinh viên', value: `${clip(body.userName, 100) || 'Không rõ'} (${clip(body.email, 100) || '—'})`, inline: false },
+        { name: 'Hoạt động', value: clip(body.activityName, 1000), inline: false },
+        { name: 'Học kỳ', value: clip(body.semester, 20) || '—', inline: true },
+        { name: 'Tập tin', value: clip(body.fileName, 200) || '—', inline: true },
+      ];
+      if (body.note) fields.push({ name: 'Ghi chú', value: clip(body.note, 1000), inline: false });
+      if (body.fileUrl) fields.push({ name: 'Xem minh chứng', value: clip(body.fileUrl, 1000), inline: false });
+      try {
+        const res = await fetch(env.DISCORD_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            embeds: [{ title: '📤 Minh chứng mới', color: 0x2563eb, fields, timestamp: new Date().toISOString() }],
+          }),
+        });
+        if (res.status >= 300) {
+          return json({ error: `Discord webhook failed: ${res.status}` }, 502);
+        }
+      } catch (err) {
+        return json({ error: `Discord webhook failed: ${err instanceof Error ? err.message : 'unknown'}` }, 502);
+      }
+      return json({ success: true });
     }
 
     // POST /api/notifications/broadcast — ghi RTDB + push FCM (admin).
@@ -899,6 +1040,75 @@ export default {
       } catch {
         return json({ error: 'Không tải được file từ Storage.' }, 502);
       }
+    }
+
+    // POST /api/storage/zip — tải + nén minh chứng server-side (thay GAS download zip).
+    // Body: { files: [{ url, name } | { text, name }], archiveName? } — name là đường dẫn trong ZIP.
+    if (req.method === 'POST' && path === '/api/storage/zip') {
+      try {
+        await requireUser(req, env);
+      } catch (e) {
+        return e as Response;
+      }
+      const body = await readJsonBody(req);
+      const rawFiles = Array.isArray(body.files) ? body.files : [];
+      if (rawFiles.length === 0) return json({ error: 'Danh sách file trống.' }, 400);
+      if (rawFiles.length > 300) return json({ error: 'Quá nhiều file (tối đa 300).' }, 400);
+
+      const trustedBucket =
+        /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/dh26nhe\.(?:firebasestorage\.app|appspot\.com)\/o\/.+/;
+      const files: Array<{ url?: string; text?: string; name: string }> = [];
+      for (const item of rawFiles) {
+        const entry = item as { url?: unknown; name?: unknown; text?: unknown };
+        const name = typeof entry.name === 'string' ? sanitizeZipPath(entry.name) : '';
+        const url = typeof entry.url === 'string' ? entry.url : '';
+        const text = typeof entry.text === 'string' ? entry.text : undefined;
+        if (!name) continue;
+        if (text !== undefined) files.push({ name, text });
+        else if (url && trustedBucket.test(url)) files.push({ name, url });
+      }
+      if (files.length === 0) return json({ error: 'Không có file hợp lệ.' }, 400);
+
+      const encoder = new TextEncoder();
+      const results = await Promise.allSettled(
+        files.map(async (file) => {
+          if (file.text !== undefined) {
+            return { name: file.name, data: encoder.encode(file.text) };
+          }
+          const upstream = await fetch(file.url as string);
+          if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
+          return { name: file.name, data: new Uint8Array(await upstream.arrayBuffer()) };
+        }),
+      );
+
+      const MAX_TOTAL_BYTES = 80 * 1024 * 1024;
+      const entries: Array<{ name: string; data: Uint8Array }> = [];
+      let totalBytes = 0;
+      let skipped = 0;
+      for (const result of results) {
+        if (result.status !== 'fulfilled') {
+          skipped += 1;
+          continue;
+        }
+        totalBytes += result.value.data.length;
+        if (totalBytes > MAX_TOTAL_BYTES) {
+          return json({ error: 'Tổng dung lượng vượt 80MB, vui lòng chọn ít hoạt động hơn.' }, 413);
+        }
+        entries.push(result.value);
+      }
+      if (entries.length === 0) return json({ error: 'Không tải được file nào.' }, 502);
+
+      const rawName = typeof body.archiveName === 'string' ? body.archiveName : 'download.zip';
+      const archiveName = (sanitizeZipPath(rawName) || 'download').replace(/\.zip$/i, '') + '.zip';
+      return new Response(buildZipStore(entries), {
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="${archiveName}"`,
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'X-Zip-Skipped',
+          'X-Zip-Skipped': String(skipped),
+        },
+      });
     }
 
     // POST /api/ai/format — biên tập nội dung thông báo bằng Groq (user đăng nhập Firebase).
